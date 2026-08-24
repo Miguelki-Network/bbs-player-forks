@@ -81,6 +81,7 @@ public class ServerNetwork
     public static final Identifier CLIENT_ANIMATION_STATE_MODEL_BLOCK_TRIGGER = Identifier.of(BBSMod.MOD_ID, "c16");
     public static final Identifier CLIENT_REFRESH_MODEL_BLOCKS = Identifier.of(BBSMod.MOD_ID, "c17");
     public static final Identifier CLIENT_REQUEST_FILM_RESYNC = Identifier.of(BBSMod.MOD_ID, "c18");
+    public static final Identifier CLIENT_OPEN_FILM_EDITOR = Identifier.of(BBSMod.MOD_ID, "c22");
 
     public static final Identifier SERVER_MODEL_BLOCK_FORM_PACKET = Identifier.of(BBSMod.MOD_ID, "s1");
     public static final Identifier SERVER_MODEL_BLOCK_TRANSFORMS_PACKET = Identifier.of(BBSMod.MOD_ID, "s2");
@@ -96,6 +97,7 @@ public class ServerNetwork
     public static final Identifier SERVER_ZOOM = Identifier.of(BBSMod.MOD_ID, "s12");
     public static final Identifier SERVER_PAUSE_FILM = Identifier.of(BBSMod.MOD_ID, "s13");
     public static final Identifier SERVER_APPLY_FILM_PLAYER_SETTINGS = Identifier.of(BBSMod.MOD_ID, "s14");
+    public static final Identifier SERVER_EDITOR_CAMERA_SYNC = Identifier.of(BBSMod.MOD_ID, "s17");
 
     private static ServerPacketCrusher crusher = new ServerPacketCrusher();
 
@@ -169,6 +171,15 @@ public class ServerNetwork
         ServerPlayNetworking.registerGlobalReceiver(idFor(SERVER_ZOOM), (payload, context) -> handleZoomPacket(context.server(), context.player(), payload.asPacketByteBuf()));
         ServerPlayNetworking.registerGlobalReceiver(idFor(SERVER_PAUSE_FILM), (payload, context) -> handlePauseFilmPacket(context.server(), context.player(), payload.asPacketByteBuf()));
         ServerPlayNetworking.registerGlobalReceiver(idFor(SERVER_APPLY_FILM_PLAYER_SETTINGS), (payload, context) -> handleApplyFilmPlayerSettings(context.server(), context.player(), payload.asPacketByteBuf()));
+        ServerPlayNetworking.registerGlobalReceiver(idFor(SERVER_EDITOR_CAMERA_SYNC), (payload, context) ->
+        {
+            PacketByteBuf buf = payload.asPacketByteBuf();
+            double x = buf.readDouble();
+            double y = buf.readDouble();
+            double z = buf.readDouble();
+
+            context.server().execute(() -> handleEditorCameraSync(context.player(), x, y, z));
+        });
     }
 
     public record BufPayload(byte[] data, CustomPayload.Id<BufPayload> id) implements CustomPayload
@@ -723,6 +734,22 @@ public class ServerNetwork
         ServerPlayNetworking.send(player, BufPayload.from(buf, idFor(CLIENT_CLICKED_MODEL_BLOCK_PACKET)));
     }
 
+    private static void handleEditorCameraSync(ServerPlayerEntity player, double x, double y, double z)
+    {
+        if (player.hasPermissionLevel(2))
+        {
+            BBSMod.getActions().syncEditorCamera(player, x, y, z);
+        }
+    }
+
+    public static void sendOpenFilmEditor(ServerPlayerEntity player, String filmId)
+    {
+        PacketByteBuf buf = PacketByteBufs.create();
+        buf.writeString(filmId == null ? "" : filmId);
+
+        ServerPlayNetworking.send(player, BufPayload.from(buf, idFor(CLIENT_OPEN_FILM_EDITOR)));
+    }
+
     public static void sendPlayFilm(ServerPlayerEntity player, ServerWorld world, String filmId, boolean withCamera)
     {
         try
@@ -731,7 +758,7 @@ public class ServerNetwork
 
             if (film != null)
             {
-                BBSMod.getActions().play(player, world, film, 0);
+                BBSMod.getActions().play(player, world, film, 0, withCamera);
 
                 BaseType data = film.toData();
 
@@ -756,7 +783,7 @@ public class ServerNetwork
 
             if (film != null)
             {
-                BBSMod.getActions().play(player, player.getServerWorld(), film, 0);
+                BBSMod.getActions().play(player, player.getServerWorld(), film, 0, withCamera);
 
                 crusher.send(player, CLIENT_PLAY_FILM_PACKET, film.toData(), (packetByteBuf) ->
                 {

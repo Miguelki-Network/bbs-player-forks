@@ -85,6 +85,7 @@ public class ClientNetwork
         ClientPlayNetworking.registerGlobalReceiver(ServerNetwork.idFor(ServerNetwork.CLIENT_ANIMATION_STATE_MODEL_BLOCK_TRIGGER), (payload, context) -> handleAnimationStateModelBlockPacket(context.client(), payload.asPacketByteBuf()));
         ClientPlayNetworking.registerGlobalReceiver(ServerNetwork.idFor(ServerNetwork.CLIENT_REFRESH_MODEL_BLOCKS), (payload, context) -> handleRefreshModelBlocksPacket(context.client(), payload.asPacketByteBuf()));
         ClientPlayNetworking.registerGlobalReceiver(ServerNetwork.idFor(ServerNetwork.CLIENT_REQUEST_FILM_RESYNC), (payload, context) -> handleRequestFilmResync(context.client(), payload.asPacketByteBuf()));
+        ClientPlayNetworking.registerGlobalReceiver(ServerNetwork.idFor(ServerNetwork.CLIENT_OPEN_FILM_EDITOR), (payload, context) -> handleOpenFilmEditorPacket(context.client(), payload.asPacketByteBuf()));
     }
 
     /* Handlers */
@@ -416,6 +417,24 @@ public class ClientNetwork
         });
     }
 
+    private static void handleOpenFilmEditorPacket(MinecraftClient client, PacketByteBuf buf)
+    {
+        String filmId = buf.readString();
+
+        client.execute(() ->
+        {
+            UIDashboard dashboard = BBSModClient.getDashboard();
+            UIScreen.open(dashboard);
+            UIFilmPanel panel = dashboard.getPanels().getPanel(UIFilmPanel.class);
+            dashboard.setPanel(panel);
+
+            if (panel != null && !filmId.isEmpty())
+            {
+                panel.pickData(filmId);
+            }
+        });
+    }
+
     /* API */
     
     public static void sendModelBlockForm(BlockPos pos, ModelBlockEntity modelBlock)
@@ -602,5 +621,20 @@ public class ClientNetwork
         }
 
         ClientPlayNetworking.send(ServerNetwork.BufPayload.from(buf, ServerNetwork.idFor(ServerNetwork.SERVER_APPLY_FILM_PLAYER_SETTINGS)));
+    }
+
+    public static void sendEditorCameraSync(double x, double y, double z)
+    {
+        if (!isIsBBSModOnServer())
+        {
+            return;
+        }
+
+        PacketByteBuf buf = PacketByteBufs.create();
+        buf.writeDouble(x);
+        buf.writeDouble(y);
+        buf.writeDouble(z);
+
+        ClientPlayNetworking.send(ServerNetwork.BufPayload.from(buf, ServerNetwork.idFor(ServerNetwork.SERVER_EDITOR_CAMERA_SYNC)));
     }
 }

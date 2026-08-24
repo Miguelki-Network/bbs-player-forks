@@ -22,6 +22,7 @@
         "iris.SystemTimeUniformsTimerMixin",
         "InGameHudMixin",
         "KeyboardMixin",
+        "GameOptionsMixin",
         "ResourceReloadLoggerMixin",
         "RenderLayerMixin",
         "ClientWorldPropertiesMixin",

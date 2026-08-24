@@ -209,9 +209,11 @@ public class BBSCommands
         LiteralArgumentBuilder<ServerCommandSource> scene = CommandManager.literal("films");
         LiteralArgumentBuilder<ServerCommandSource> play = CommandManager.literal("play");
         LiteralArgumentBuilder<ServerCommandSource> stop = CommandManager.literal("stop");
+        LiteralArgumentBuilder<ServerCommandSource> edit = CommandManager.literal("edit");
         RequiredArgumentBuilder<ServerCommandSource, EntitySelector> target = CommandManager.argument("target", EntityArgumentType.players());
         RequiredArgumentBuilder<ServerCommandSource, String> playFilm = CommandManager.argument("film", StringArgumentType.string());
         RequiredArgumentBuilder<ServerCommandSource, String> stopFilm = CommandManager.argument("film", StringArgumentType.string());
+        RequiredArgumentBuilder<ServerCommandSource, String> editFilm = CommandManager.argument("film", StringArgumentType.string());
         RequiredArgumentBuilder<ServerCommandSource, Boolean> camera = CommandManager.argument("camera", BoolArgumentType.bool());
 
         playFilm.suggests((ctx, builder) ->
@@ -234,6 +236,16 @@ public class BBSCommands
             return builder.buildFuture();
         });
 
+        editFilm.suggests((ctx, builder) ->
+        {
+            for (String key : BBSMod.getFilms().getKeys())
+            {
+                builder.suggest(key);
+            }
+
+            return builder.buildFuture();
+        });
+
         scene.then(
             target.then(
                 play.then(
@@ -247,6 +259,12 @@ public class BBSCommands
                 stop.then(
                     stopFilm.executes(BBSCommands::sceneCommandStop)
                 )
+            )
+            .then(
+                edit.executes((source) -> sceneCommandEdit(source, null))
+                    .then(
+                        editFilm.executes((source) -> sceneCommandEdit(source, StringArgumentType.getString(source, "film")))
+                    )
             )
         );
 
@@ -466,6 +484,18 @@ public class BBSCommands
         for (ServerPlayerEntity player : players)
         {
             ServerNetwork.sendStopFilm(player, filmId);
+        }
+
+        return 1;
+    }
+
+    private static int sceneCommandEdit(CommandContext<ServerCommandSource> source, String filmId) throws CommandSyntaxException
+    {
+        Collection<ServerPlayerEntity> players = EntityArgumentType.getPlayers(source, "target");
+
+        for (ServerPlayerEntity player : players)
+        {
+            ServerNetwork.sendOpenFilmEditor(player, filmId);
         }
 
         return 1;

@@ -1,6 +1,8 @@
 package mchorse.bbs_mod.actions;
 
 import mchorse.bbs_mod.BBSMod;
+import mchorse.bbs_mod.camera.Camera;
+import mchorse.bbs_mod.camera.clips.CameraClipContext;
 import mchorse.bbs_mod.data.types.BaseType;
 import mchorse.bbs_mod.entity.ActorEntity;
 import mchorse.bbs_mod.film.Film;
@@ -13,21 +15,29 @@ import mchorse.bbs_mod.forms.forms.Form;
 import mchorse.bbs_mod.morphing.Morph;
 import mchorse.bbs_mod.network.ServerNetwork;
 import mchorse.bbs_mod.settings.values.base.BaseValue;
+import mchorse.bbs_mod.camera.data.Position;
 import mchorse.bbs_mod.utils.DataPath;
+import mchorse.bbs_mod.utils.clips.Clip;
+import net.minecraft.entity.EntityType;
 import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.MarkerEntity;
 import net.minecraft.entity.MovementType;
 import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.item.ItemStack;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
+import net.minecraft.text.Text;
+import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.Vec3d;
 
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public class ActionPlayer
 {
@@ -37,6 +47,7 @@ public class ActionPlayer
     public int countdown;
     public int exception;
     public PlayerType type;
+    public boolean withCamera = true;
 
     public boolean syncing;
     private boolean pendingResync;
@@ -48,6 +59,11 @@ public class ActionPlayer
     private Map<String, LivingEntity> actors = new HashMap<>();
 
     private Form cachedForm;
+
+    private MarkerEntity cameraAnchor;
+    private CameraClipContext cameraContext;
+    private Position cameraPosition = new Position();
+    private Set<ChunkPos> activeCameraTickets = new HashSet<>();
 
     /**
      * The film dresses the first person player for the duration of the playback, so what it
@@ -67,12 +83,18 @@ public class ActionPlayer
 
     public ActionPlayer(ServerPlayerEntity serverPlayer, ServerWorld world, Film film, int tick, int countdown, int exception, PlayerType type)
     {
+        this(serverPlayer, world, film, tick, countdown, exception, type, true);
+    }
+
+    public ActionPlayer(ServerPlayerEntity serverPlayer, ServerWorld world, Film film, int tick, int countdown, int exception, PlayerType type, boolean withCamera)
+    {
         this.world = world;
         this.film = film;
         this.tick = tick;
         this.countdown = countdown;
         this.exception = exception;
         this.type = type;
+        this.withCamera = withCamera;
 
         this.serverPlayer = serverPlayer;
         this.duration = film.camera.calculateDuration();
@@ -101,6 +123,96 @@ public class ActionPlayer
 
             applyFilmPlayerSettingsTo(this.serverPlayer, this.film.hp.get(), this.film.hunger.get(), this.film.xpLevel.get(), this.film.xpProgress.get());
         }
+
+        if (this.withCamera && this.serverPlayer != null && !this.film.camera.get().isEmpty())
+        {
+            this.setupCameraAnchor();
+        }
+    }
+
+    private void setupCameraAnchor()
+    {
+        try
+        {
+            this.cameraAnchor = new MarkerEntity(EntityType.MARKER, this.world);
+            this.cameraAnchor.setCustomName(Text.literal("bbs_camera_anchor"));
+            this.cameraAnchor.setInvisible(true);
+            this.cameraAnchor.setNoGravity(true);
+
+            this.evaluateCameraPosition(this.tick, this.cameraPosition);
+            this.cameraAnchor.setPosition(this.cameraPosition.point.x, this.cameraPosition.point.y, this.cameraPosition.point.z);
+
+            this.world.spawnEntity(this.cameraAnchor);
+            this.serverPlayer.setCameraEntity(this.cameraAnchor);
+            this.world.getChunkManager().updatePosition(this.serverPlayer);
+
+            this.prewarmCameraChunks(this.tick, 60);
+        }
+        catch (Exception e)
+        {
+            e.printStackTrace();
+        }
+    }
+
+    private void evaluateCameraPosition(int tick, Position position)
+    {
+        if (this.cameraContext == null)
+        {
+            this.cameraContext = new CameraClipContext();
+            this.cameraContext.clips = this.film.camera;
+        }
+
+        this.cameraContext.setup(tick, 0F);
+        for (Clip clip : this.film.camera.getClips(tick))
+        {
+            this.cameraContext.apply(clip, position);
+        }
+    }
+
+    private void prewarmCameraChunks(int currentTick, int horizonTicks)
+    {
+        if (this.world == null || this.film.camera.get().isEmpty())
+        {
+            return;
+        }
+
+        Set<ChunkPos> newTickets = new HashSet<>();
+        Position tempPos = new Position();
+
+        for (int t = currentTick; t <= currentTick + horizonTicks && t <= this.duration; t += 10)
+        {
+            this.evaluateCameraPosition(t, tempPos);
+
+            int chunkX = ((int) Math.floor(tempPos.point.x)) >> 4;
+            int chunkZ = ((int) Math.floor(tempPos.point.z)) >> 4;
+
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                for (int dz = -1; dz <= 1; dz++)
+                {
+                    ChunkPos pos = new ChunkPos(chunkX + dx, chunkZ + dz);
+                    newTickets.add(pos);
+                }
+            }
+        }
+
+        for (ChunkPos pos : newTickets)
+        {
+            if (!this.activeCameraTickets.contains(pos))
+            {
+                this.world.getChunkManager().addTicket(BBSMod.BBS_CAMERA_TICKET, pos, 3, pos);
+            }
+        }
+
+        for (ChunkPos pos : this.activeCameraTickets)
+        {
+            if (!newTickets.contains(pos))
+            {
+                this.world.getChunkManager().removeTicket(BBSMod.BBS_CAMERA_TICKET, pos, 3, pos);
+            }
+        }
+
+        this.activeCameraTickets = newTickets;
     }
 
     /** Equipment slots the film drives directly; the hotbar is driven by slot index instead. */
@@ -341,6 +453,14 @@ public class ActionPlayer
             this.applyAction();
         }
 
+        if (this.cameraAnchor != null && this.withCamera)
+        {
+            this.evaluateCameraPosition(this.tick, this.cameraPosition);
+            this.cameraAnchor.setPosition(this.cameraPosition.point.x, this.cameraPosition.point.y, this.cameraPosition.point.z);
+            this.world.getChunkManager().updatePosition(this.serverPlayer);
+            this.prewarmCameraChunks(this.tick, 60);
+        }
+
         this.tick += 1;
 
         return !this.syncing && this.tick >= this.duration;
@@ -470,6 +590,24 @@ public class ActionPlayer
             this.serverPlayer.experienceProgress = this.cacheXpProgress;
             this.serverPlayer.setExperienceLevel(this.cacheXpLevel);
         }
+
+        if (this.cameraAnchor != null)
+        {
+            if (this.serverPlayer != null && this.serverPlayer.getCameraEntity() == this.cameraAnchor)
+            {
+                this.serverPlayer.setCameraEntity(this.serverPlayer);
+            }
+
+            this.cameraAnchor.discard();
+            this.cameraAnchor = null;
+        }
+
+        for (ChunkPos pos : this.activeCameraTickets)
+        {
+            this.world.getChunkManager().removeTicket(BBSMod.BBS_CAMERA_TICKET, pos, 3, pos);
+        }
+
+        this.activeCameraTickets.clear();
     }
 
     public void toggle()

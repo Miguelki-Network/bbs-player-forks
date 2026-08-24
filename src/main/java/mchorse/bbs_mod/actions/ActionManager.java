@@ -1,5 +1,6 @@
 package mchorse.bbs_mod.actions;
 
+import mchorse.bbs_mod.BBSMod;
 import mchorse.bbs_mod.actions.types.ActionClip;
 import mchorse.bbs_mod.data.types.BaseType;
 import mchorse.bbs_mod.film.Film;
@@ -10,6 +11,7 @@ import net.minecraft.nbt.NbtCompound;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.ChunkPos;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -130,19 +132,29 @@ public class ActionManager
 
     public ActionPlayer play(ServerPlayerEntity serverPlayer, ServerWorld world, Film film, int tick)
     {
-        return this.play(serverPlayer, world, film, tick, 0, -1, PlayerType.NORMAL);
+        return this.play(serverPlayer, world, film, tick, 0, -1, PlayerType.NORMAL, true);
+    }
+
+    public ActionPlayer play(ServerPlayerEntity serverPlayer, ServerWorld world, Film film, int tick, boolean withCamera)
+    {
+        return this.play(serverPlayer, world, film, tick, 0, -1, PlayerType.NORMAL, withCamera);
     }
 
     public ActionPlayer play(ServerPlayerEntity serverPlayer, ServerWorld world, Film film, int tick, PlayerType type)
     {
-        return this.play(serverPlayer, world, film, tick, 0, -1, type);
+        return this.play(serverPlayer, world, film, tick, 0, -1, type, true);
     }
 
     public ActionPlayer play(ServerPlayerEntity serverPlayer, ServerWorld world, Film film, int tick, int countdown, int exception, PlayerType type)
     {
+        return this.play(serverPlayer, world, film, tick, countdown, exception, type, true);
+    }
+
+    public ActionPlayer play(ServerPlayerEntity serverPlayer, ServerWorld world, Film film, int tick, int countdown, int exception, PlayerType type, boolean withCamera)
+    {
         if (film != null)
         {
-            ActionPlayer player = new ActionPlayer(serverPlayer, world, film, tick, countdown, exception, type);
+            ActionPlayer player = new ActionPlayer(serverPlayer, world, film, tick, countdown, exception, type, withCamera);
 
             this.players.add(player);
 
@@ -155,6 +167,27 @@ public class ActionManager
         }
 
         return null;
+    }
+
+    public void syncEditorCamera(ServerPlayerEntity player, double x, double y, double z)
+    {
+        if (player == null || player.getServerWorld() == null)
+        {
+            return;
+        }
+
+        ServerWorld world = player.getServerWorld();
+        int chunkX = ((int) Math.floor(x)) >> 4;
+        int chunkZ = ((int) Math.floor(z)) >> 4;
+
+        for (int dx = -2; dx <= 2; dx++)
+        {
+            for (int dz = -2; dz <= 2; dz++)
+            {
+                ChunkPos pos = new ChunkPos(chunkX + dx, chunkZ + dz);
+                world.getChunkManager().addTicket(BBSMod.BBS_CAMERA_TICKET, pos, 3, pos);
+            }
+        }
     }
 
     public void stop(String filmId)

@@ -12,6 +12,7 @@ import mchorse.bbs_mod.camera.clips.misc.CurveClip;
 import mchorse.bbs_mod.camera.clips.misc.SubtitleClip;
 import mchorse.bbs_mod.camera.controller.CameraWorkCameraController;
 import mchorse.bbs_mod.camera.controller.PlayCameraController;
+import mchorse.bbs_mod.client.cinematic.ThirdPersonFilmController;
 import mchorse.bbs_mod.events.ModelBlockEntityUpdateCallback;
 import mchorse.bbs_mod.forms.renderers.utils.RecolorVertexConsumer;
 import mchorse.bbs_mod.graphics.texture.Texture;
@@ -382,6 +383,19 @@ public class BBSRendering
         }
 
         renderingWorld = true;
+
+        /* Force third-person when a film is playing to ensure player model renders in camera */
+        if (BBSModClient.getCameraController().getCurrent() instanceof PlayCameraController)
+        {
+            if (!ThirdPersonFilmController.isActive())
+            {
+                ThirdPersonFilmController.begin();
+            }
+        }
+        else if (ThirdPersonFilmController.isActive())
+        {
+            ThirdPersonFilmController.end();
+        }
 
         if (!customSize)
         {

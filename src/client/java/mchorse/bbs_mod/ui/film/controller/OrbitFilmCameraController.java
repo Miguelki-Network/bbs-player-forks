@@ -26,6 +26,7 @@ import mchorse.bbs_mod.forms.renderers.ModelFormRenderer;
 import mchorse.bbs_mod.forms.renderers.utils.FormFrameCache;
 import mchorse.bbs_mod.forms.renderers.utils.MatrixCache;
 import mchorse.bbs_mod.graphics.window.Window;
+import mchorse.bbs_mod.network.ClientNetwork;
 import mchorse.bbs_mod.ui.Keys;
 import mchorse.bbs_mod.ui.framework.UIContext;
 import mchorse.bbs_mod.ui.utils.Area;
@@ -87,6 +88,9 @@ public class OrbitFilmCameraController implements ICameraController
 
     private final PanState panState = new PanState();
     protected final Vector3i velocityPosition = new Vector3i();
+
+    private int syncTicks = 0;
+    private Vector3d lastSyncedPos = new Vector3d();
 
     public OrbitFilmCameraController(UIFilmController controller)
     {
@@ -361,6 +365,16 @@ public class OrbitFilmCameraController implements ICameraController
         camera.position.set(this.toWorld(new Vector3f(this.pivot)));
         camera.position.add(offset);
         camera.rotation.set(-this.rotation.x, -(this.rotation.y + this.anchorYaw), 0F);
+
+        if (++this.syncTicks >= 10)
+        {
+            this.syncTicks = 0;
+            if (this.lastSyncedPos.distanceSquared(camera.position) > 1.0F)
+            {
+                this.lastSyncedPos.set(camera.position);
+                ClientNetwork.sendEditorCameraSync(camera.position.x, camera.position.y, camera.position.z);
+            }
+        }
     }
 
     @Override

@@ -9,6 +9,7 @@ import mchorse.bbs_mod.camera.controller.ICameraController;
 import mchorse.bbs_mod.camera.controller.PlayCameraController;
 import mchorse.bbs_mod.camera.controller.RunnerCameraController;
 import mchorse.bbs_mod.camera.utils.TimeUtils;
+import mchorse.bbs_mod.client.cinematic.ThirdPersonFilmController;
 import mchorse.bbs_mod.film.replays.Replay;
 import mchorse.bbs_mod.morphing.Morph;
 import mchorse.bbs_mod.network.ClientNetwork;
@@ -122,6 +123,8 @@ public class Films
                 {
                     controller.getContext().shutdown();
                 }
+
+                ThirdPersonFilmController.end();
             }
         }
     }
@@ -325,6 +328,11 @@ public class Films
 
             return film.hasFinished();
         });
+
+        if (this.controllers.isEmpty() && !(BBSModClient.getCameraController().getCurrent() instanceof PlayCameraController))
+        {
+            ThirdPersonFilmController.end();
+        }
 
         if (this.recorder != null)
         {

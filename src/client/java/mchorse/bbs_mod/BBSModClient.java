@@ -488,7 +488,7 @@ public class BBSModClient implements ClientModInitializer
             .register(Link.bbs("tracker"), TrackerClientClip.class, new ClipFactoryData(Icons.USER, 0x4cedfc))
             .register(Link.bbs("curve"), CurveClientClip.class, new ClipFactoryData(Icons.ARC, 0xff1493));
 
-        /* Keybinds */
+        /* Keybinds (Disabled in player edition)
         keyDashboard = this.createKey("dashboard", GLFW.GLFW_KEY_0);
         keyItemEditor = this.createKey("item_editor", GLFW.GLFW_KEY_HOME);
         keyPlayFilm = this.createKey("play_film", GLFW.GLFW_KEY_RIGHT_CONTROL);
@@ -501,6 +501,7 @@ public class BBSModClient implements ClientModInitializer
         keyDemorph = this.createKey("demorph", GLFW.GLFW_KEY_PERIOD);
         keyTeleport = this.createKey("teleport", GLFW.GLFW_KEY_Y);
         keyZoom = this.createKeyMouse("zoom", 2);
+        */
 
         WorldRenderEvents.AFTER_ENTITIES.register((context) ->
         {
@@ -624,6 +625,7 @@ public class BBSModClient implements ClientModInitializer
 
             worldExportSession.update();
 
+            /* Key polling disabled in player edition
             while (keyDashboard.wasPressed()) UIScreen.open(getDashboard());
             while (keyItemEditor.wasPressed()) this.keyOpenModelBlockEditor(mc);
             while (keyPlayFilm.wasPressed()) this.keyPlayFilm();
@@ -641,6 +643,7 @@ public class BBSModClient implements ClientModInitializer
             }
             while (keyDemorph.wasPressed()) ClientNetwork.sendPlayerForm(null);
             while (keyTeleport.wasPressed()) this.keyTeleport();
+            */
 
             if (mc.player != null)
             {
