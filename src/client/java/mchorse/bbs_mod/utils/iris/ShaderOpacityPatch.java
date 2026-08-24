@@ -3,7 +3,9 @@ package mchorse.bbs_mod.utils.iris;
 import mchorse.bbs_mod.BBSSettings;
 import mchorse.bbs_mod.client.BBSRendering;
 import mchorse.bbs_mod.cubic.render.vao.ModelVAORenderer;
-import mchorse.bbs_mod.mixin.client.iris.IrisRenderingPipelineAccessor;
+
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 
 import net.minecraft.client.MinecraftClient;
 
@@ -472,13 +474,21 @@ public class ShaderOpacityPatch
             WorldRenderingPipeline pipeline =
                 net.irisshaders.iris.Iris.getPipelineManager().getPipelineNullable();
 
-            if (!(pipeline instanceof IrisRenderingPipeline irisPipeline))
+            if (pipeline == null)
             {
                 return;
             }
 
-            IrisRenderingPipelineAccessor access = (IrisRenderingPipelineAccessor) irisPipeline;
-            RenderTargets targets = access.bbs$renderTargets();
+            RenderTargets targets = null;
+
+            try
+            {
+                Field targetsField = pipeline.getClass().getDeclaredField("renderTargets");
+                targetsField.setAccessible(true);
+                targets = (RenderTargets) targetsField.get(pipeline);
+            }
+            catch (Throwable ignored)
+            {}
 
             if (targets == null)
             {
@@ -498,7 +508,16 @@ public class ShaderOpacityPatch
 
             if (bindIrisDefault)
             {
-                access.bbs$bindDefault();
+                try
+                {
+                    Method bindDefault = pipeline.getClass().getMethod("bindDefault");
+                    bindDefault.setAccessible(true);
+                    bindDefault.invoke(pipeline);
+                }
+                catch (Throwable ignored)
+                {
+                    BBSRendering.ensurePaintOverlayTargetFramebuffer();
+                }
             }
             else
             {

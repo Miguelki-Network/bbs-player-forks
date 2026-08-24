@@ -37,7 +37,6 @@
         "ClientPlayerEntityAccessor",
         "LivingEntityItemAccessor",
         "FireworkRocketEntityAccessor",
-        "iris.IrisRenderingPipelineAccessor",
         "iris.IrisRenderingPipelineMixin",
         "iris.CustomUniformsBuilderMixin",
         "iris.CustomUniformsAccessor",
