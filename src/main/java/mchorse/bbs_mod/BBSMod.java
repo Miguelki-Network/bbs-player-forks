@@ -167,6 +167,9 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.world.GameRules;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -179,6 +182,8 @@ public class BBSMod implements ModInitializer
     public static final String MOD_ID = "bbs";
     public static final String VERSION = "2.1";
     public static final boolean IS_CML = true;
+
+    public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
     public static final ChunkTicketType<ChunkPos> BBS_CAMERA_TICKET = ChunkTicketType.create("bbs_camera", Comparator.comparingLong(ChunkPos::toLong), 60);
 

@@ -23,6 +23,8 @@ public class WorldFilmController extends BaseFilmController
 
     public int tick;
     public int duration;
+    private int waitTicks;
+    private boolean ready;
 
     public WorldFilmController(Film film)
     {
@@ -33,6 +35,41 @@ public class WorldFilmController extends BaseFilmController
         this.duration = film.camera.calculateDuration();
         this.context = new CameraClipContext();
         this.context.clips = film.camera;
+    }
+
+    private boolean isStartLoaded()
+    {
+        MinecraftClient mc = MinecraftClient.getInstance();
+
+        if (mc.world == null || this.context == null || this.context.clips == null)
+        {
+            return true;
+        }
+
+        Position sample = new Position();
+        this.context.clipData.clear();
+        this.context.setup(0, 0F);
+
+        for (Clip clip : this.context.clips.getClips(0))
+        {
+            this.context.apply(clip, sample);
+        }
+
+        int chunkX = ((int) Math.floor(sample.point.x)) >> 4;
+        int chunkZ = ((int) Math.floor(sample.point.z)) >> 4;
+
+        for (int dx = -1; dx <= 1; dx++)
+        {
+            for (int dz = -1; dz <= 1; dz++)
+            {
+                if (!mc.world.getChunkManager().isChunkLoaded(chunkX + dx, chunkZ + dz))
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
     }
 
     public CameraClipContext getCameraContext()
@@ -82,6 +119,23 @@ public class WorldFilmController extends BaseFilmController
     @Override
     public void update()
     {
+        if (!this.ready)
+        {
+            this.waitTicks += 1;
+
+            if (this.isStartLoaded() || this.waitTicks >= 60)
+            {
+                this.ready = true;
+            }
+            else
+            {
+                super.update();
+                this.applyCameraClips(0F);
+
+                return;
+            }
+        }
+
         if (!this.paused)
         {
             this.tick += 1;
@@ -143,7 +197,7 @@ public class WorldFilmController extends BaseFilmController
 
         this.applyCameraClips(context.tickCounter().getTickDelta(false));
 
-        if (BBSSettings.recordingCameraPreview.get())
+        if (this instanceof Recorder && BBSSettings.recordingCameraPreview.get())
         {
             int tick = Math.max(this.tick, 0);
 

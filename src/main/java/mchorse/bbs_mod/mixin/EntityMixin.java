@@ -96,4 +96,13 @@ public class EntityMixin
             }
         }
     }
+
+    @Inject(method = "shouldRender(D)Z", at = @At("HEAD"), cancellable = true)
+    public void bbs$onShouldRender(double distance, CallbackInfoReturnable<Boolean> info)
+    {
+        if ((Object) this instanceof PlayerEntity || (Object) this instanceof IMorphProvider || (Object) this instanceof IEntityFormProvider)
+        {
+            info.setReturnValue(distance < (512D * 512D));
+        }
+    }
 }

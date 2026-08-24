@@ -113,21 +113,9 @@ public class Films
 
     public static void stopFilm(String filmId)
     {
-        Film film = BBSModClient.getFilms().remove(filmId);
-        ICameraController current = BBSModClient.getCameraController().getCurrent();
-
-        if (film != null && current instanceof PlayCameraController play)
-        {
-            if (play.getContext().clips == film.camera)
-            {
-                if (BBSModClient.getCameraController().remove(play) instanceof RunnerCameraController controller)
-                {
-                    controller.getContext().shutdown();
-                }
-
-                ThirdPersonFilmController.end();
-            }
-        }
+        BBSModClient.getFilms().remove(filmId);
+        BBSModClient.getCameraController().remove(PlayCameraController.class);
+        ThirdPersonFilmController.end();
     }
 
     /* Instance API */

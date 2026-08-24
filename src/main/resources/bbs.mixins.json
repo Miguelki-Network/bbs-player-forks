@@ -18,7 +18,7 @@
         "LevelPropertiesAccessor",
         "StructureTemplateAccessor",
         "StructureTemplatePalettedListAccessor",
-        "EntityMixin"
+        "ServerChunkLoadingManagerAccessor"
     ],
     "injectors": {
         "defaultRequire": 1

@@ -2,20 +2,33 @@ package mchorse.bbs_mod.actions;
 
 import mchorse.bbs_mod.BBSMod;
 import mchorse.bbs_mod.actions.types.ActionClip;
+import mchorse.bbs_mod.camera.IBBSCameraPlayer;
 import mchorse.bbs_mod.data.types.BaseType;
 import mchorse.bbs_mod.film.Film;
 import mchorse.bbs_mod.network.ServerNetwork;
 import mchorse.bbs_mod.utils.DataPath;
 
+import mchorse.bbs_mod.mixin.ServerChunkLoadingManagerAccessor;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.entity.Entity;
+import net.minecraft.network.packet.s2c.play.ChunkDataS2CPacket;
+import net.minecraft.network.packet.s2c.play.ChunkRenderDistanceCenterS2CPacket;
+import net.minecraft.network.packet.s2c.play.ChunkSentS2CPacket;
+import net.minecraft.network.packet.s2c.play.LightUpdateS2CPacket;
+import net.minecraft.network.packet.s2c.play.StartChunkSendS2CPacket;
+import net.minecraft.server.network.ChunkFilter;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
+import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.chunk.Chunk;
+import net.minecraft.world.chunk.ChunkStatus;
+import net.minecraft.world.chunk.WorldChunk;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -128,17 +141,72 @@ public class ActionManager
             return;
         }
 
+        if (player instanceof IBBSCameraPlayer cameraPlayer)
+        {
+            cameraPlayer.bbs$setCameraPosition(new Vec3d(x, y, z));
+        }
+
         ServerWorld world = player.getServerWorld();
         int chunkX = ((int) Math.floor(x)) >> 4;
         int chunkZ = ((int) Math.floor(z)) >> 4;
 
-        for (int dx = -2; dx <= 2; dx++)
+        int serverMax = player.getServer() != null ? player.getServer().getPlayerManager().getViewDistance() : 10;
+        int clientMax = player.getClientOptions() != null ? player.getClientOptions().viewDistance() : serverMax;
+        int viewDistance = Math.max(2, Math.min(serverMax, clientMax));
+        player.networkHandler.sendPacket(new ChunkRenderDistanceCenterS2CPacket(chunkX, chunkZ));
+
+        List<WorldChunk> chunksToSend = new ArrayList<>();
+
+        for (int dx = -viewDistance; dx <= viewDistance; dx++)
         {
-            for (int dz = -2; dz <= 2; dz++)
+            for (int dz = -viewDistance; dz <= viewDistance; dz++)
             {
                 ChunkPos pos = new ChunkPos(chunkX + dx, chunkZ + dz);
-                world.getChunkManager().addTicket(BBSMod.BBS_CAMERA_TICKET, pos, 3, pos);
+                world.getChunkManager().addTicket(BBSMod.BBS_CAMERA_TICKET, pos, 31, pos);
+
+                Chunk chunk = world.getChunkManager().getChunk(pos.x, pos.z, ChunkStatus.FULL, false);
+
+                if (chunk instanceof WorldChunk worldChunk)
+                {
+                    chunksToSend.add(worldChunk);
+                }
+                else
+                {
+                    world.getChunkManager().getChunkFutureSyncOnMainThread(pos.x, pos.z, ChunkStatus.FULL, true).thenAccept((opt) ->
+                    {
+                        Chunk loaded = opt.orElse(null);
+
+                        if (loaded instanceof WorldChunk loadedWorldChunk)
+                        {
+                            if (world.getServer() != null)
+                            {
+                                world.getServer().execute(() ->
+                                {
+                                    player.networkHandler.sendPacket(StartChunkSendS2CPacket.INSTANCE);
+                                    player.networkHandler.sendPacket(new ChunkDataS2CPacket(loadedWorldChunk, world.getLightingProvider(), null, null));
+                                    player.networkHandler.sendPacket(new LightUpdateS2CPacket(pos, world.getLightingProvider(), null, null));
+                                    player.networkHandler.sendPacket(new ChunkSentS2CPacket(1));
+                                });
+                            }
+                        }
+                    });
+                }
             }
+        }
+
+        if (!chunksToSend.isEmpty())
+        {
+            player.networkHandler.sendPacket(StartChunkSendS2CPacket.INSTANCE);
+
+            for (WorldChunk worldChunk : chunksToSend)
+            {
+                ChunkPos pos = worldChunk.getPos();
+
+                player.networkHandler.sendPacket(new ChunkDataS2CPacket(worldChunk, world.getLightingProvider(), null, null));
+                player.networkHandler.sendPacket(new LightUpdateS2CPacket(pos, world.getLightingProvider(), null, null));
+            }
+
+            player.networkHandler.sendPacket(new ChunkSentS2CPacket(chunksToSend.size()));
         }
     }
 
@@ -150,7 +218,24 @@ public class ActionManager
         {
             ActionPlayer next = it.next();
 
-            if (next.film.getId().equals(filmId))
+            if (filmId == null || next.film.getId().equals(filmId))
+            {
+                this.stopDamage(next.getWorld());
+                next.stop();
+                it.remove();
+            }
+        }
+    }
+
+    public void stop(ServerPlayerEntity player)
+    {
+        Iterator<ActionPlayer> it = this.players.iterator();
+
+        while (it.hasNext())
+        {
+            ActionPlayer next = it.next();
+
+            if (next.getServerPlayer() == player)
             {
                 this.stopDamage(next.getWorld());
                 next.stop();
@@ -370,11 +455,41 @@ public class ActionManager
         }
     }
 
+    public void changedBlock(ServerWorld world, BlockPos pos, BlockState state, BlockEntity blockEntity)
+    {
+        if (world == null)
+        {
+            return;
+        }
+
+        DamageControl control = this.dc.get(world);
+
+        if (control != null)
+        {
+            control.addBlock(pos, state, blockEntity);
+        }
+    }
+
     public void changedBlock(BlockPos pos, BlockState state, BlockEntity blockEntity)
     {
         for (DamageControl control : this.dc.values())
         {
             control.addBlock(pos, state, blockEntity);
+        }
+    }
+
+    public void spawnedEntity(ServerWorld world, Entity entity)
+    {
+        if (world == null)
+        {
+            return;
+        }
+
+        DamageControl control = this.dc.get(world);
+
+        if (control != null)
+        {
+            control.addEntity(entity);
         }
     }
 

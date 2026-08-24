@@ -18,6 +18,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(Camera.class)
 public abstract class CameraMixin
 {
+    @Shadow private boolean thirdPerson;
     @Shadow protected abstract void setRotation(float yaw, float pitch);
     @Shadow protected abstract void setPos(double x, double y, double z);
 
@@ -36,6 +37,7 @@ public abstract class CameraMixin
 
             this.setPos(position.x, position.y, position.z);
             this.setRotation(yaw, pitch);
+            this.thirdPerson = true;
         }
     }
 }

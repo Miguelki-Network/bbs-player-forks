@@ -10,11 +10,13 @@ import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.math.BlockPos;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 public class DamageControl
 {
-    private List<BlockCapture> blocks = new ArrayList<>();
+    private Map<BlockPos, BlockCapture> blocks = new LinkedHashMap<>();
     private List<Entity> entities = new ArrayList<>();
 
     private ServerWorld world;
@@ -35,17 +37,14 @@ public class DamageControl
             return;
         }
 
-        for (int i = 0; i < this.blocks.size(); i++)
-        {
-            BlockCapture blockCapture = this.blocks.get(i);
+        BlockPos immutablePos = pos.toImmutable();
 
-            if (blockCapture.pos.equals(pos))
-            {
-                return;
-            }
+        if (this.blocks.containsKey(immutablePos))
+        {
+            return;
         }
 
-        this.blocks.add(new BlockCapture(new BlockPos(pos), state, entity == null ? null : entity.createNbtWithId(this.world.getRegistryManager())));
+        this.blocks.put(immutablePos, new BlockCapture(immutablePos, state, entity == null ? null : entity.createNbtWithId(this.world.getRegistryManager())));
     }
 
     public void addEntity(Entity entity)
@@ -63,7 +62,7 @@ public class DamageControl
         boolean prev = this.enable;
         this.enable = false;
 
-        List<BlockCapture> blocksCopy = new ArrayList<>(this.blocks);
+        List<BlockCapture> blocksCopy = new ArrayList<>(this.blocks.values());
         List<Entity> entitiesCopy = new ArrayList<>(this.entities);
 
         this.blocks.clear();
