@@ -31,7 +31,6 @@
         "KeyboardInputMixin",
         "EntityRendererMixin",
         "ClientPlayerEntityAccessor",
-        "iris.IrisRenderingPipelineAccessor",
         "iris.CustomUniformsBuilderMixin",
         "iris.CustomUniformsAccessor",
         "iris.JcppProcessorMixin",
