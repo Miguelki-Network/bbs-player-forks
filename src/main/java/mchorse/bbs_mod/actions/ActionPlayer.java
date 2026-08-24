@@ -26,6 +26,7 @@ import net.minecraft.entity.MovementType;
 import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.item.ItemStack;
 import net.minecraft.network.packet.s2c.play.ChunkDataS2CPacket;
+import net.minecraft.network.packet.s2c.play.ChunkRenderDistanceCenterS2CPacket;
 import net.minecraft.network.packet.s2c.play.LightUpdateS2CPacket;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
@@ -67,6 +68,8 @@ public class ActionPlayer
     private CameraClipContext cameraContext;
     private Position cameraPosition = new Position();
     private Set<ChunkPos> activeCameraTickets = new HashSet<>();
+    private int lastCenterChunkX = Integer.MIN_VALUE;
+    private int lastCenterChunkZ = Integer.MIN_VALUE;
 
     /**
      * The film dresses the first person player for the duration of the playback, so what it
@@ -163,23 +166,31 @@ public class ActionPlayer
             return;
         }
 
-        Set<ChunkPos> newTickets = new HashSet<>();
-        Position tempPos = new Position();
+        Position samplePos = new Position();
+        this.evaluateCameraPosition(currentTick, samplePos);
 
-        for (int t = currentTick; t <= currentTick + horizonTicks && t <= this.duration; t += 10)
+        int centerChunkX = ((int) Math.floor(samplePos.point.x)) >> 4;
+        int centerChunkZ = ((int) Math.floor(samplePos.point.z)) >> 4;
+
+        if (this.serverPlayer != null && (centerChunkX != this.lastCenterChunkX || centerChunkZ != this.lastCenterChunkZ))
         {
-            this.evaluateCameraPosition(t, tempPos);
+            this.lastCenterChunkX = centerChunkX;
+            this.lastCenterChunkZ = centerChunkZ;
+            this.serverPlayer.networkHandler.sendPacket(new ChunkRenderDistanceCenterS2CPacket(centerChunkX, centerChunkZ));
+        }
 
-            int chunkX = ((int) Math.floor(tempPos.point.x)) >> 4;
-            int chunkZ = ((int) Math.floor(tempPos.point.z)) >> 4;
+        int viewDistance = this.serverPlayer != null && this.serverPlayer.getServer() != null
+            ? this.serverPlayer.getServer().getPlayerManager().getViewDistance()
+            : 8;
 
-            for (int dx = -1; dx <= 1; dx++)
+        Set<ChunkPos> newTickets = new HashSet<>();
+
+        for (int dx = -viewDistance; dx <= viewDistance; dx++)
+        {
+            for (int dz = -viewDistance; dz <= viewDistance; dz++)
             {
-                for (int dz = -1; dz <= 1; dz++)
-                {
-                    ChunkPos pos = new ChunkPos(chunkX + dx, chunkZ + dz);
-                    newTickets.add(pos);
-                }
+                ChunkPos pos = new ChunkPos(centerChunkX + dx, centerChunkZ + dz);
+                newTickets.add(pos);
             }
         }
 
@@ -576,12 +587,19 @@ public class ActionPlayer
             this.serverPlayer.setExperienceLevel(this.cacheXpLevel);
         }
 
+        if (this.serverPlayer != null)
+        {
+            this.serverPlayer.networkHandler.sendPacket(new ChunkRenderDistanceCenterS2CPacket(this.serverPlayer.getChunkPos().x, this.serverPlayer.getChunkPos().z));
+        }
+
         for (ChunkPos pos : this.activeCameraTickets)
         {
             this.world.getChunkManager().removeTicket(BBSMod.BBS_CAMERA_TICKET, pos, 3, pos);
         }
 
         this.activeCameraTickets.clear();
+        this.lastCenterChunkX = Integer.MIN_VALUE;
+        this.lastCenterChunkZ = Integer.MIN_VALUE;
     }
 
     public void toggle()

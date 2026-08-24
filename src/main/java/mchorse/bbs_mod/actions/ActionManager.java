@@ -9,6 +9,7 @@ import net.minecraft.block.BlockState;
 import net.minecraft.entity.Entity;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.network.packet.s2c.play.ChunkDataS2CPacket;
+import net.minecraft.network.packet.s2c.play.ChunkRenderDistanceCenterS2CPacket;
 import net.minecraft.network.packet.s2c.play.LightUpdateS2CPacket;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
@@ -182,10 +183,13 @@ public class ActionManager
         ServerWorld world = player.getServerWorld();
         int chunkX = ((int) Math.floor(x)) >> 4;
         int chunkZ = ((int) Math.floor(z)) >> 4;
+        int viewDistance = player.getServer() != null ? player.getServer().getPlayerManager().getViewDistance() : 8;
 
-        for (int dx = -2; dx <= 2; dx++)
+        player.networkHandler.sendPacket(new ChunkRenderDistanceCenterS2CPacket(chunkX, chunkZ));
+
+        for (int dx = -viewDistance; dx <= viewDistance; dx++)
         {
-            for (int dz = -2; dz <= 2; dz++)
+            for (int dz = -viewDistance; dz <= viewDistance; dz++)
             {
                 ChunkPos pos = new ChunkPos(chunkX + dx, chunkZ + dz);
                 world.getChunkManager().addTicket(BBSMod.BBS_CAMERA_TICKET, pos, 3, pos);
