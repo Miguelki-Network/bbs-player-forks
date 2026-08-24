@@ -253,32 +253,29 @@ public class BBSCommands
             return builder.buildFuture();
         });
 
-        scene.then(
-            target.then(
-                play.then(
-                    playFilm.executes((source) -> sceneCommandPlay(source, true))
-                        .then(
-                            camera.executes((source) -> sceneCommandPlay(source, BoolArgumentType.getBool(source, "camera")))
-                        )
-                )
-            )
-            .then(
-                target.then(
-                    stop.then(
-                        stopFilm.executes(BBSCommands::sceneCommandStop)
+        target.then(
+            play.then(
+                playFilm.executes((source) -> sceneCommandPlay(source, true))
+                    .then(
+                        camera.executes((source) -> sceneCommandPlay(source, BoolArgumentType.getBool(source, "camera")))
                     )
-                )
-            )
-            .then(
-                target.then(
-                    edit.executes(BBSCommands::sceneCommandEditNoFilm)
-                        .then(
-                            editFilm.executes(BBSCommands::sceneCommandEdit)
-                        )
-                )
             )
         );
 
+        target.then(
+            stop.then(
+                stopFilm.executes(BBSCommands::sceneCommandStop)
+            )
+        );
+
+        target.then(
+            edit.executes(BBSCommands::sceneCommandEditNoFilm)
+                .then(
+                    editFilm.executes(BBSCommands::sceneCommandEdit)
+                )
+        );
+
+        scene.then(target);
         bbs.then(scene.requires(hasPermissions));
     }
 
