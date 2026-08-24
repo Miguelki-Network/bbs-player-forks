@@ -8,6 +8,7 @@ import mchorse.bbs_mod.camera.clips.misc.ChromaSkyCurveSettings;
 import mchorse.bbs_mod.camera.clips.misc.CurveClip;
 import mchorse.bbs_mod.camera.controller.CameraWorkCameraController;
 import mchorse.bbs_mod.camera.controller.PlayCameraController;
+import mchorse.bbs_mod.client.cinematic.ThirdPersonFilmController;
 import mchorse.bbs_mod.camera.data.Position;
 import mchorse.bbs_mod.client.renderer.ModelBlockEntityRenderer;
 import mchorse.bbs_mod.client.renderer.TriggerBlockEntityRenderer;
@@ -626,6 +627,15 @@ public class BBSRendering
         ShaderOpacityPatch.onWorldRenderBegin();
         updateCloudRenderMode(mc);
         ModelVAORenderer.clearPaintOverlayQueue();
+
+        // Force third-person when a film is playing to ensure player model renders in FP camera
+        if (BBSModClient.getCameraController().getCurrent() instanceof PlayCameraController)
+        {
+            if (!ThirdPersonFilmController.isActive())
+            {
+                ThirdPersonFilmController.begin();
+            }
+        }
 
         if (!customSize)
         {

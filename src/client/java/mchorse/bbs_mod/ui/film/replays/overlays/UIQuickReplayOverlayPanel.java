@@ -240,7 +240,7 @@ public class UIQuickReplayOverlayPanel extends UIOverlayPanel
         super.render(context);
     }
 
-    @Override
+    /* @Override
     public boolean subKeyPressed(UIContext context)
     {
         if (context.isPressed(Keys.CLOSE))
@@ -258,5 +258,5 @@ public class UIQuickReplayOverlayPanel extends UIOverlayPanel
         }
 
         return super.subKeyPressed(context);
-    }
+    } */
 }
