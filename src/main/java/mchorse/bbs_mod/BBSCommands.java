@@ -58,16 +58,19 @@ public class BBSCommands
         Predicate<ServerCommandSource> hasPermissions = (source) -> source.hasPermissionLevel(2);
         LiteralArgumentBuilder<ServerCommandSource> bbs = CommandManager.literal("bbs").requires((source) -> true);
 
+        // ========== BBS PLAYER MOD - DISABLED EDITING COMMANDS ==========
+        // Only film playback and morph commands are registered
         registerMorphCommand(bbs, environment, hasPermissions);
-        registerModelBlockCommand(bbs, environment, hasPermissions);
+        // registerModelBlockCommand(bbs, environment, hasPermissions);
         registerMorphEntityCommand(bbs, environment, hasPermissions);
         registerFilmsCommand(bbs, environment, hasPermissions);
-        registerDCCommand(bbs, environment, hasPermissions);
-        registerOnHeadCommand(bbs, environment, hasPermissions);
-        registerConfigCommand(bbs, environment, hasPermissions);
-        registerCheatsCommand(bbs, environment);
-        registerBoomCommand(bbs, environment, hasPermissions);
-        registerStructureSaveCommand(bbs, environment, hasPermissions);
+        // registerDCCommand(bbs, environment, hasPermissions);
+        // registerOnHeadCommand(bbs, environment, hasPermissions);
+        // registerConfigCommand(bbs, environment, hasPermissions);
+        // registerCheatsCommand(bbs, environment);
+        // registerBoomCommand(bbs, environment, hasPermissions);
+        // registerStructureSaveCommand(bbs, environment, hasPermissions);
+        // ================================================================
 
         dispatcher.register(bbs);
     }
@@ -246,28 +249,29 @@ public class BBSCommands
             return builder.buildFuture();
         });
 
-        scene.then(
-            target.then(
-                play.then(
-                    playFilm.executes((source) -> sceneCommandPlay(source, true))
-                        .then(
-                            camera.executes((source) -> sceneCommandPlay(source, BoolArgumentType.getBool(source, "camera")))
-                        )
-                )
-            )
-            .then(
-                stop.then(
-                    stopFilm.executes(BBSCommands::sceneCommandStop)
-                )
-            )
-            .then(
-                edit.executes((source) -> sceneCommandEdit(source, null))
+        target.then(
+            play.then(
+                playFilm.executes((source) -> sceneCommandPlay(source, true))
                     .then(
-                        editFilm.executes((source) -> sceneCommandEdit(source, StringArgumentType.getString(source, "film")))
+                        camera.executes((source) -> sceneCommandPlay(source, BoolArgumentType.getBool(source, "camera")))
                     )
             )
         );
 
+        target.then(
+            stop.then(
+                stopFilm.executes(BBSCommands::sceneCommandStop)
+            )
+        );
+
+        target.then(
+            edit.executes((source) -> sceneCommandEdit(source, null))
+                .then(
+                    editFilm.executes((source) -> sceneCommandEdit(source, StringArgumentType.getString(source, "film")))
+                )
+        );
+
+        scene.then(target);
         bbs.then(scene.requires(hasPermissions));
     }
 
