@@ -8,10 +8,13 @@ import mchorse.bbs_mod.utils.DataPath;
 import net.minecraft.block.BlockState;
 import net.minecraft.entity.Entity;
 import net.minecraft.nbt.NbtCompound;
+import net.minecraft.network.packet.s2c.play.ChunkDataS2CPacket;
+import net.minecraft.network.packet.s2c.play.LightUpdateS2CPacket;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
+import net.minecraft.world.chunk.WorldChunk;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -186,6 +189,14 @@ public class ActionManager
             {
                 ChunkPos pos = new ChunkPos(chunkX + dx, chunkZ + dz);
                 world.getChunkManager().addTicket(BBSMod.BBS_CAMERA_TICKET, pos, 3, pos);
+
+                WorldChunk chunk = world.getChunk(pos.x, pos.z);
+
+                if (chunk != null)
+                {
+                    player.networkHandler.sendPacket(new ChunkDataS2CPacket(chunk, world.getLightingProvider(), null, null));
+                    player.networkHandler.sendPacket(new LightUpdateS2CPacket(pos, world.getLightingProvider(), null, null));
+                }
             }
         }
     }

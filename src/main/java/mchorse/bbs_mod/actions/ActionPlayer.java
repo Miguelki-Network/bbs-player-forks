@@ -25,11 +25,14 @@ import net.minecraft.entity.MarkerEntity;
 import net.minecraft.entity.MovementType;
 import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.item.ItemStack;
+import net.minecraft.network.packet.s2c.play.ChunkDataS2CPacket;
+import net.minecraft.network.packet.s2c.play.LightUpdateS2CPacket;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.chunk.WorldChunk;
 
 import java.util.ArrayList;
 import java.util.EnumMap;
@@ -132,25 +135,9 @@ public class ActionPlayer
 
     private void setupCameraAnchor()
     {
-        try
+        if (this.withCamera && this.serverPlayer != null && this.film.camera != null && this.duration > 0)
         {
-            this.cameraAnchor = new MarkerEntity(EntityType.MARKER, this.world);
-            this.cameraAnchor.setCustomName(Text.literal("bbs_camera_anchor"));
-            this.cameraAnchor.setInvisible(true);
-            this.cameraAnchor.setNoGravity(true);
-
-            this.evaluateCameraPosition(this.tick, this.cameraPosition);
-            this.cameraAnchor.setPosition(this.cameraPosition.point.x, this.cameraPosition.point.y, this.cameraPosition.point.z);
-
-            this.world.spawnEntity(this.cameraAnchor);
-            this.serverPlayer.setCameraEntity(this.cameraAnchor);
-            this.world.getChunkManager().updatePosition(this.serverPlayer);
-
             this.prewarmCameraChunks(this.tick, 60);
-        }
-        catch (Exception e)
-        {
-            e.printStackTrace();
         }
     }
 
@@ -171,7 +158,7 @@ public class ActionPlayer
 
     private void prewarmCameraChunks(int currentTick, int horizonTicks)
     {
-        if (this.world == null || this.film.camera.get().isEmpty())
+        if (this.world == null || this.film.camera == null || this.film.camera.get().isEmpty())
         {
             return;
         }
@@ -201,6 +188,17 @@ public class ActionPlayer
             if (!this.activeCameraTickets.contains(pos))
             {
                 this.world.getChunkManager().addTicket(BBSMod.BBS_CAMERA_TICKET, pos, 3, pos);
+
+                if (this.serverPlayer != null)
+                {
+                    WorldChunk chunk = this.world.getChunk(pos.x, pos.z);
+
+                    if (chunk != null)
+                    {
+                        this.serverPlayer.networkHandler.sendPacket(new ChunkDataS2CPacket(chunk, this.world.getLightingProvider(), null, null));
+                        this.serverPlayer.networkHandler.sendPacket(new LightUpdateS2CPacket(pos, this.world.getLightingProvider(), null, null));
+                    }
+                }
             }
         }
 
@@ -302,23 +300,13 @@ public class ActionPlayer
                 continue;
             }
 
-            if (replay.fp.get() && this.serverPlayer != null)
-            {
-                if (this.type == PlayerType.NORMAL)
-                {
-                    this.actors.put(replay.getId(), this.serverPlayer);
-                }
-            }
-            else
-            {
-                ActorEntity actor = new ActorEntity(BBSMod.ACTOR_ENTITY, this.world);
+            ActorEntity actor = new ActorEntity(BBSMod.ACTOR_ENTITY, this.world);
 
-                actor.setForm(FormUtils.copy(replay.form.get()));
+            actor.setForm(FormUtils.copy(replay.form.get()));
 
-                this.apply(actor, replay, this.tick, false);
-                this.actors.put(replay.getId(), actor);
-                this.world.spawnEntity(actor);
-            }
+            this.apply(actor, replay, this.tick, false);
+            this.actors.put(replay.getId(), actor);
+            this.world.spawnEntity(actor);
         }
 
         for (ServerPlayerEntity player : this.world.getPlayers())
@@ -453,11 +441,8 @@ public class ActionPlayer
             this.applyAction();
         }
 
-        if (this.cameraAnchor != null && this.withCamera)
+        if (this.withCamera)
         {
-            this.evaluateCameraPosition(this.tick, this.cameraPosition);
-            this.cameraAnchor.setPosition(this.cameraPosition.point.x, this.cameraPosition.point.y, this.cameraPosition.point.z);
-            this.world.getChunkManager().updatePosition(this.serverPlayer);
             this.prewarmCameraChunks(this.tick, 60);
         }
 
@@ -589,17 +574,6 @@ public class ActionPlayer
             this.serverPlayer.getHungerManager().setFoodLevel(this.cacheHunger);
             this.serverPlayer.experienceProgress = this.cacheXpProgress;
             this.serverPlayer.setExperienceLevel(this.cacheXpLevel);
-        }
-
-        if (this.cameraAnchor != null)
-        {
-            if (this.serverPlayer != null && this.serverPlayer.getCameraEntity() == this.cameraAnchor)
-            {
-                this.serverPlayer.setCameraEntity(this.serverPlayer);
-            }
-
-            this.cameraAnchor.discard();
-            this.cameraAnchor = null;
         }
 
         for (ChunkPos pos : this.activeCameraTickets)
