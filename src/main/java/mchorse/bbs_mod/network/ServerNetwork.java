@@ -137,6 +137,7 @@ public class ServerNetwork
         registerC2S(SERVER_ZOOM);
         registerC2S(SERVER_PAUSE_FILM);
         registerC2S(SERVER_APPLY_FILM_PLAYER_SETTINGS);
+        registerC2S(SERVER_EDITOR_CAMERA_SYNC);
 
         registerS2C(CLIENT_CLICKED_MODEL_BLOCK_PACKET);
         registerS2C(CLIENT_PLAYER_FORM_PACKET);
@@ -156,6 +157,7 @@ public class ServerNetwork
         registerS2C(CLIENT_ANIMATION_STATE_MODEL_BLOCK_TRIGGER);
         registerS2C(CLIENT_REFRESH_MODEL_BLOCKS);
         registerS2C(CLIENT_REQUEST_FILM_RESYNC);
+        registerS2C(CLIENT_OPEN_FILM_EDITOR);
 
         ServerPlayNetworking.registerGlobalReceiver(idFor(SERVER_MODEL_BLOCK_FORM_PACKET), (payload, context) -> handleModelBlockFormPacket(context.server(), context.player(), payload.asPacketByteBuf()));
         ServerPlayNetworking.registerGlobalReceiver(idFor(SERVER_MODEL_BLOCK_TRANSFORMS_PACKET), (payload, context) -> handleModelBlockTransformsPacket(context.server(), context.player(), payload.asPacketByteBuf()));
