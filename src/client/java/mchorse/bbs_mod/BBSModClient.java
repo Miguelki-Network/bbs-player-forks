@@ -1107,7 +1107,7 @@ public class BBSModClient implements ClientModInitializer
         {
             Films.pauseFilm(panel.getData().getId());
         }
-    }
+    }*/
 
     private void keyRecordReplay()
     {

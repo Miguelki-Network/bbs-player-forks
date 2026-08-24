@@ -85,6 +85,7 @@ public class ServerNetwork
     public static final Identifier CLIENT_BAY4LLY_SKIN = Identifier.of(BBSMod.MOD_ID, "c19");
     public static final Identifier CLIENT_MOB_COMBAT_ACTION = Identifier.of(BBSMod.MOD_ID, "c20");
     public static final Identifier CLIENT_MOB_CONVERSION = Identifier.of(BBSMod.MOD_ID, "c21");
+    public static final Identifier CLIENT_OPEN_FILM_EDITOR = Identifier.of(BBSMod.MOD_ID, "c22");
 
     public static final byte MOB_COMBAT_KIND_MELEE = 0;
     public static final byte MOB_COMBAT_KIND_PROJECTILE = 1;
@@ -106,6 +107,7 @@ public class ServerNetwork
     public static final Identifier SERVER_TRIGGER_BLOCK_UPDATE = Identifier.of(BBSMod.MOD_ID, "s14");
     public static final Identifier SERVER_TRIGGER_BLOCK_CLICK = Identifier.of(BBSMod.MOD_ID, "s15");
     public static final Identifier SERVER_SET_GAME_MODE = Identifier.of(BBSMod.MOD_ID, "s16");
+    public static final Identifier SERVER_EDITOR_CAMERA_SYNC = Identifier.of(BBSMod.MOD_ID, "s17");
 
     private static ServerPacketCrusher crusher = new ServerPacketCrusher();
 
@@ -180,6 +182,7 @@ public class ServerNetwork
         PayloadTypeRegistry.playC2S().register(idFor(SERVER_TRIGGER_BLOCK_UPDATE), BufPayload.codecFor(idFor(SERVER_TRIGGER_BLOCK_UPDATE)));
         PayloadTypeRegistry.playC2S().register(idFor(SERVER_TRIGGER_BLOCK_CLICK), BufPayload.codecFor(idFor(SERVER_TRIGGER_BLOCK_CLICK)));
         PayloadTypeRegistry.playC2S().register(idFor(SERVER_SET_GAME_MODE), BufPayload.codecFor(idFor(SERVER_SET_GAME_MODE)));
+        PayloadTypeRegistry.playC2S().register(idFor(SERVER_EDITOR_CAMERA_SYNC), BufPayload.codecFor(idFor(SERVER_EDITOR_CAMERA_SYNC)));
 
         try {
             Class<?> envTypeClass = Class.forName("net.fabricmc.api.EnvType");
@@ -209,6 +212,7 @@ public class ServerNetwork
                 PayloadTypeRegistry.playS2C().register(idFor(CLIENT_CLICKED_TRIGGER_BLOCK_PACKET), BufPayload.codecFor(idFor(CLIENT_CLICKED_TRIGGER_BLOCK_PACKET)));
                 PayloadTypeRegistry.playS2C().register(idFor(CLIENT_MOB_COMBAT_ACTION), BufPayload.codecFor(idFor(CLIENT_MOB_COMBAT_ACTION)));
                 PayloadTypeRegistry.playS2C().register(idFor(CLIENT_MOB_CONVERSION), BufPayload.codecFor(idFor(CLIENT_MOB_CONVERSION)));
+                PayloadTypeRegistry.playS2C().register(idFor(CLIENT_OPEN_FILM_EDITOR), BufPayload.codecFor(idFor(CLIENT_OPEN_FILM_EDITOR)));
             }
         } catch (Throwable t) {
         }
@@ -229,9 +233,27 @@ public class ServerNetwork
         ServerPlayNetworking.registerGlobalReceiver(idFor(SERVER_TRIGGER_BLOCK_UPDATE), (payload, context) -> handleTriggerBlockUpdatePacket(context.server(), context.player(), payload.asPacketByteBuf()));
         ServerPlayNetworking.registerGlobalReceiver(idFor(SERVER_TRIGGER_BLOCK_CLICK), (payload, context) -> handleTriggerBlockClickPacket(context.server(), context.player(), payload.asPacketByteBuf()));
         ServerPlayNetworking.registerGlobalReceiver(idFor(SERVER_SET_GAME_MODE), (payload, context) -> handleSetGameModePacket(context.server(), context.player(), payload.asPacketByteBuf()));
+        ServerPlayNetworking.registerGlobalReceiver(idFor(SERVER_EDITOR_CAMERA_SYNC), (payload, context) -> handleEditorCameraSync(context.server(), context.player(), payload.asPacketByteBuf()));
     }
 
     /* Handlers */
+
+    private static void handleEditorCameraSync(MinecraftServer server, ServerPlayerEntity player, PacketByteBuf buf)
+    {
+        if (!PermissionUtils.arePanelsAllowed(server, player))
+        {
+            return;
+        }
+
+        double x = buf.readDouble();
+        double y = buf.readDouble();
+        double z = buf.readDouble();
+
+        server.execute(() ->
+        {
+            BBSMod.getActions().syncEditorCamera(player, x, y, z);
+        });
+    }
 
     private static void handleModelBlockFormPacket(MinecraftServer server, ServerPlayerEntity player, PacketByteBuf buf)
     {
@@ -842,7 +864,7 @@ public class ServerNetwork
 
             if (film != null)
             {
-                BBSMod.getActions().play(player, world, film, 0);
+                BBSMod.getActions().play(player, world, film, 0, withCamera);
 
                 BaseType data = film.toData();
 
@@ -867,7 +889,7 @@ public class ServerNetwork
 
             if (film != null)
             {
-                BBSMod.getActions().play(player, player.getServerWorld(), film, 0);
+                BBSMod.getActions().play(player, player.getServerWorld(), film, 0, withCamera);
 
                 crusher.send(player, CLIENT_PLAY_FILM_PACKET, film.toData(), (packetByteBuf) ->
                 {
@@ -880,6 +902,15 @@ public class ServerNetwork
         {
             e.printStackTrace();
         }
+    }
+
+    public static void sendOpenFilmEditor(ServerPlayerEntity player, String filmId)
+    {
+        PacketByteBuf buf = PacketByteBufs.create();
+
+        buf.writeString(filmId == null ? "" : filmId);
+
+        ServerPlayNetworking.send(player, BufPayload.from(buf, idFor(CLIENT_OPEN_FILM_EDITOR)));
     }
 
     public static void sendStopFilm(ServerPlayerEntity player, String filmId)

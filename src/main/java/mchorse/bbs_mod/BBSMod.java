@@ -157,16 +157,19 @@ import net.minecraft.registry.Registry;
 import net.minecraft.registry.RegistryOps;
 import net.minecraft.registry.RegistryWrapper;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.server.world.ChunkTicketType;
 import net.minecraft.sound.SoundEvent;
 import net.minecraft.text.Text;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.WorldSavePath;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.ChunkPos;
 import net.minecraft.world.GameRules;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
@@ -176,6 +179,8 @@ public class BBSMod implements ModInitializer
     public static final String MOD_ID = "bbs";
     public static final String VERSION = "2.1";
     public static final boolean IS_CML = true;
+
+    public static final ChunkTicketType<ChunkPos> BBS_CAMERA_TICKET = ChunkTicketType.create("bbs_camera", Comparator.comparingLong(ChunkPos::toLong), 60);
 
     public static final EventBus events = new EventBus();
 

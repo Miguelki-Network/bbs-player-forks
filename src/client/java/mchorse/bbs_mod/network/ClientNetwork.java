@@ -6,6 +6,7 @@ import mchorse.bbs_mod.blocks.entities.ModelBlockEntity;
 import mchorse.bbs_mod.blocks.entities.ModelProperties;
 import mchorse.bbs_mod.blocks.entities.TriggerBlockEntity;
 import mchorse.bbs_mod.client.BBSRendering;
+import mchorse.bbs_mod.client.FilmLaunchHelper;
 import mchorse.bbs_mod.data.DataStorageUtils;
 import mchorse.bbs_mod.data.types.BaseType;
 import mchorse.bbs_mod.data.types.MapType;
@@ -99,6 +100,7 @@ public class ClientNetwork
         CustomPayload.Id<ServerNetwork.BufPayload> C_CLICKED_TRIGGER_BLOCK_ID = ServerNetwork.idFor(ServerNetwork.CLIENT_CLICKED_TRIGGER_BLOCK_PACKET);
         CustomPayload.Id<ServerNetwork.BufPayload> C_MOB_COMBAT_ACTION_ID = ServerNetwork.idFor(ServerNetwork.CLIENT_MOB_COMBAT_ACTION);
         CustomPayload.Id<ServerNetwork.BufPayload> C_MOB_CONVERSION_ID = ServerNetwork.idFor(ServerNetwork.CLIENT_MOB_CONVERSION);
+        CustomPayload.Id<ServerNetwork.BufPayload> C_OPEN_FILM_EDITOR_ID = ServerNetwork.idFor(ServerNetwork.CLIENT_OPEN_FILM_EDITOR);
 
         PayloadTypeRegistry.playS2C().register(C_CLICKED_ID, ServerNetwork.BufPayload.codecFor(C_CLICKED_ID));
         PayloadTypeRegistry.playS2C().register(C_PLAYER_FORM_ID, ServerNetwork.BufPayload.codecFor(C_PLAYER_FORM_ID));
@@ -121,6 +123,7 @@ public class ClientNetwork
         PayloadTypeRegistry.playS2C().register(C_CLICKED_TRIGGER_BLOCK_ID, ServerNetwork.BufPayload.codecFor(C_CLICKED_TRIGGER_BLOCK_ID));
         PayloadTypeRegistry.playS2C().register(C_MOB_COMBAT_ACTION_ID, ServerNetwork.BufPayload.codecFor(C_MOB_COMBAT_ACTION_ID));
         PayloadTypeRegistry.playS2C().register(C_MOB_CONVERSION_ID, ServerNetwork.BufPayload.codecFor(C_MOB_CONVERSION_ID));
+        PayloadTypeRegistry.playS2C().register(C_OPEN_FILM_EDITOR_ID, ServerNetwork.BufPayload.codecFor(C_OPEN_FILM_EDITOR_ID));
 
         ClientPlayNetworking.registerGlobalReceiver(C_CLICKED_ID, (payload, context) -> handleClientModelBlockPacket(context.client(), payload.asPacketByteBuf()));
         ClientPlayNetworking.registerGlobalReceiver(C_PLAYER_FORM_ID, (payload, context) -> handlePlayerFormPacket(context.client(), payload.asPacketByteBuf()));
@@ -143,9 +146,30 @@ public class ClientNetwork
         ClientPlayNetworking.registerGlobalReceiver(C_ANIM_STATE_MB_TRIGGER_ID, (payload, context) -> handleAnimationStateModelBlockPacket(context.client(), payload.asPacketByteBuf()));
         ClientPlayNetworking.registerGlobalReceiver(C_REFRESH_MODEL_BLOCKS_ID, (payload, context) -> handleRefreshModelBlocksPacket(context.client(), payload.asPacketByteBuf()));
         ClientPlayNetworking.registerGlobalReceiver(C_CLICKED_TRIGGER_BLOCK_ID, (payload, context) -> handleClickedTriggerBlockPacket(context.client(), payload.asPacketByteBuf()));
+        ClientPlayNetworking.registerGlobalReceiver(C_OPEN_FILM_EDITOR_ID, (payload, context) -> handleOpenFilmEditorPacket(context.client(), payload.asPacketByteBuf()));
     }
 
     /* Handlers */
+
+    private static void handleOpenFilmEditorPacket(MinecraftClient client, PacketByteBuf buf)
+    {
+        String filmId = buf.readString();
+
+        client.execute(() ->
+        {
+            if (filmId != null && !filmId.trim().isEmpty())
+            {
+                FilmLaunchHelper.openFilm(filmId);
+            }
+            else
+            {
+                UIDashboard dashboard = BBSModClient.getDashboard();
+
+                UIScreen.open(dashboard);
+                dashboard.setPanel(dashboard.getPanel(UIFilmPanel.class));
+            }
+        });
+    }
 
     private static void handleClickedTriggerBlockPacket(MinecraftClient client, PacketByteBuf buf)
     {
@@ -765,5 +789,16 @@ public class ClientNetwork
         buf.writeBlockPos(pos);
 
         ClientPlayNetworking.send(ServerNetwork.BufPayload.from(buf, ServerNetwork.idFor(ServerNetwork.SERVER_TRIGGER_BLOCK_CLICK)));
+    }
+
+    public static void sendEditorCameraSync(double x, double y, double z)
+    {
+        PacketByteBuf buf = PacketByteBufs.create();
+
+        buf.writeDouble(x);
+        buf.writeDouble(y);
+        buf.writeDouble(z);
+
+        ClientPlayNetworking.send(ServerNetwork.BufPayload.from(buf, ServerNetwork.idFor(ServerNetwork.SERVER_EDITOR_CAMERA_SYNC)));
     }
 }

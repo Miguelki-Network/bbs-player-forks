@@ -1,5 +1,6 @@
 package mchorse.bbs_mod.ui.film.controller;
 
+import mchorse.bbs_mod.BBSModClient;
 import mchorse.bbs_mod.BBSSettings;
 import mchorse.bbs_mod.camera.Camera;
 import mchorse.bbs_mod.camera.controller.ICameraController;
@@ -14,6 +15,7 @@ import mchorse.bbs_mod.forms.forms.utils.Anchor;
 import mchorse.bbs_mod.forms.renderers.ModelFormRenderer;
 import mchorse.bbs_mod.forms.renderers.utils.MatrixCache;
 import mchorse.bbs_mod.graphics.window.Window;
+import mchorse.bbs_mod.network.ClientNetwork;
 import mchorse.bbs_mod.ui.Keys;
 import mchorse.bbs_mod.ui.framework.UIContext;
 import mchorse.bbs_mod.ui.utils.Area;
@@ -58,6 +60,11 @@ public class OrbitFilmCameraController implements ICameraController
     private boolean center;
 
     protected Vector3i velocityPosition = new Vector3i();
+
+    private int syncTimer;
+    private double lastSyncX;
+    private double lastSyncY;
+    private double lastSyncZ;
     protected Vector4i velocityAngle = new Vector4i();
 
     private boolean animating;
@@ -448,6 +455,38 @@ public class OrbitFilmCameraController implements ICameraController
         float length = this.position.length();
 
         return length > MIN_DISTANCE ? length : DEFAULT_ORBIT_DISTANCE;
+    }
+
+    @Override
+    public void update()
+    {
+        if (ClientNetwork.isIsBBSModOnServer())
+        {
+            this.syncTimer += 1;
+
+            if (this.syncTimer >= 10)
+            {
+                this.syncTimer = 0;
+
+                Vector3d pos = BBSModClient.getCameraController().getPosition();
+
+                if (pos != null)
+                {
+                    double dx = pos.x - this.lastSyncX;
+                    double dy = pos.y - this.lastSyncY;
+                    double dz = pos.z - this.lastSyncZ;
+
+                    if (dx * dx + dy * dy + dz * dz > 1D)
+                    {
+                        this.lastSyncX = pos.x;
+                        this.lastSyncY = pos.y;
+                        this.lastSyncZ = pos.z;
+
+                        ClientNetwork.sendEditorCameraSync(pos.x, pos.y, pos.z);
+                    }
+                }
+            }
+        }
     }
 
     @Override
