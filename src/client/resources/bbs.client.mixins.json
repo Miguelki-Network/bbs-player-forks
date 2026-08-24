@@ -33,8 +33,6 @@
         "KeyboardInputMixin",
         "MinecraftClientInvoker",
         "GameOptionsMixin",
-        "GameRendererToggleMixin",
-        "MinecraftClientMixin",
         "EntityRendererMixin",
         "ClientPlayerEntityAccessor",
         "LivingEntityItemAccessor",

@@ -628,13 +628,17 @@ public class BBSRendering
         updateCloudRenderMode(mc);
         ModelVAORenderer.clearPaintOverlayQueue();
 
-        // Force third-person when a film is playing to ensure player model renders in FP camera
+        /* Force third-person when a film is playing to ensure player model renders in camera */
         if (BBSModClient.getCameraController().getCurrent() instanceof PlayCameraController)
         {
             if (!ThirdPersonFilmController.isActive())
             {
                 ThirdPersonFilmController.begin();
             }
+        }
+        else if (ThirdPersonFilmController.isActive())
+        {
+            ThirdPersonFilmController.end();
         }
 
         if (!customSize)

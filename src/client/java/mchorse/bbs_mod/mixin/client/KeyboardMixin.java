@@ -18,8 +18,8 @@ public class KeyboardMixin
     @Inject(method = "onKey", at = @At("HEAD"), cancellable = true)
     public void onOnKey(long window, int key, int scancode, int action, int modifiers, CallbackInfo info)
     {
-        // Block F5 perspective toggle during cinematic playback
-        if (ThirdPersonFilmController.isActive() && key == GLFW_KEY_F5 && action == 1)
+        /* Block F5 perspective toggle during cinematic playback */
+        if (ThirdPersonFilmController.isActive() && key == GLFW_KEY_F5)
         {
             info.cancel();
             return;
