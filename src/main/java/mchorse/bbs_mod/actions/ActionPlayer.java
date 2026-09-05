@@ -2,7 +2,9 @@ package mchorse.bbs_mod.actions;
 
 import mchorse.bbs_mod.BBSMod;
 import mchorse.bbs_mod.camera.Camera;
+import mchorse.bbs_mod.camera.IBBSCameraPlayer;
 import mchorse.bbs_mod.camera.clips.CameraClipContext;
+import mchorse.bbs_mod.camera.data.Position;
 import mchorse.bbs_mod.data.types.BaseType;
 import mchorse.bbs_mod.entity.ActorEntity;
 import mchorse.bbs_mod.film.Film;
@@ -15,10 +17,9 @@ import mchorse.bbs_mod.forms.forms.Form;
 import mchorse.bbs_mod.morphing.Morph;
 import mchorse.bbs_mod.network.ServerNetwork;
 import mchorse.bbs_mod.settings.values.base.BaseValue;
-import mchorse.bbs_mod.camera.data.Position;
 import mchorse.bbs_mod.utils.DataPath;
 import mchorse.bbs_mod.utils.clips.Clip;
-import net.minecraft.entity.EntityType;
+
 import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.MarkerEntity;
@@ -27,15 +28,19 @@ import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.item.ItemStack;
 import net.minecraft.network.packet.s2c.play.ChunkDataS2CPacket;
 import net.minecraft.network.packet.s2c.play.ChunkRenderDistanceCenterS2CPacket;
+import net.minecraft.network.packet.s2c.play.ChunkSentS2CPacket;
 import net.minecraft.network.packet.s2c.play.LightUpdateS2CPacket;
+import net.minecraft.network.packet.s2c.play.StartChunkSendS2CPacket;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
-import net.minecraft.text.Text;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.chunk.Chunk;
+import net.minecraft.world.chunk.ChunkStatus;
 import net.minecraft.world.chunk.WorldChunk;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -68,6 +73,10 @@ public class ActionPlayer
     private CameraClipContext cameraContext;
     private Position cameraPosition = new Position();
     private Set<ChunkPos> activeCameraTickets = new HashSet<>();
+    private Set<ChunkPos> activePlayerTickets = new HashSet<>();
+    private Set<ChunkPos> requestedChunks = new HashSet<>();
+    private Set<ChunkPos> sentCameraChunks = new HashSet<>();
+    private List<WorldChunk> pendingChunksToSend = new ArrayList<>();
     private int lastCenterChunkX = Integer.MIN_VALUE;
     private int lastCenterChunkZ = Integer.MIN_VALUE;
 
@@ -105,6 +114,9 @@ public class ActionPlayer
         this.serverPlayer = serverPlayer;
         this.duration = film.camera.calculateDuration();
 
+        this.cameraContext = new CameraClipContext();
+        this.cameraContext.clips = this.film.camera;
+
         this.updateReplayEntities();
 
         Replay fpReplay = film.getFirstPersonReplay();
@@ -136,92 +148,273 @@ public class ActionPlayer
         }
     }
 
-    private void setupCameraAnchor()
+    public void setupCameraAnchor()
     {
-        if (this.withCamera && this.serverPlayer != null && this.film.camera != null && this.duration > 0)
+        if (this.withCamera && this.serverPlayer != null && this.film.camera != null)
         {
-            this.prewarmCameraChunks(this.tick, 60);
+            ChunkPos playerChunk = this.serverPlayer.getChunkPos();
+            int viewDistance = this.getEffectiveViewDistance();
+            int playerRetainRadius = Math.min(viewDistance, 6);
+
+            /* Keep all chunks around the physical player entity loaded throughout the cinematic */
+            for (int dx = -playerRetainRadius; dx <= playerRetainRadius; dx++)
+            {
+                for (int dz = -playerRetainRadius; dz <= playerRetainRadius; dz++)
+                {
+                    ChunkPos pos = new ChunkPos(playerChunk.x + dx, playerChunk.z + dz);
+
+                    this.world.getChunkManager().addTicket(BBSMod.BBS_CAMERA_TICKET, pos, 31, pos);
+                    this.activePlayerTickets.add(pos);
+                }
+            }
+
+            /* Preload initial camera chunks */
+            Position sample = new Position();
+            this.evaluateCameraPosition(0, sample);
+            int startChunkX = ((int) Math.floor(sample.point.x)) >> 4;
+            int startChunkZ = ((int) Math.floor(sample.point.z)) >> 4;
+            this.lastCenterChunkX = startChunkX;
+            this.lastCenterChunkZ = startChunkZ;
+            this.serverPlayer.networkHandler.sendPacket(new ChunkRenderDistanceCenterS2CPacket(startChunkX, startChunkZ));
+
+            /* Load initial immediate area instantly (radius 6), outer rings stream progressively */
+            this.requestCameraChunks(startChunkX, startChunkZ, Math.min(viewDistance, 6), 120);
+            this.preloadPath(0, viewDistance);
+            this.flushPendingChunks();
         }
     }
 
-    private void evaluateCameraPosition(int tick, Position position)
+    private int getEffectiveViewDistance()
     {
-        if (this.cameraContext == null)
+        if (this.serverPlayer == null)
         {
-            this.cameraContext = new CameraClipContext();
-            this.cameraContext.clips = this.film.camera;
+            return 8;
         }
 
-        this.cameraContext.setup(tick, 0F);
-        for (Clip clip : this.film.camera.getClips(tick))
+        int serverMax = this.serverPlayer.getServer() != null
+            ? this.serverPlayer.getServer().getPlayerManager().getViewDistance()
+            : 10;
+        int clientMax = this.serverPlayer.getClientOptions() != null
+            ? this.serverPlayer.getClientOptions().viewDistance()
+            : serverMax;
+
+        return Math.max(2, Math.min(serverMax, clientMax));
+    }
+
+    private void requestCameraChunks(int centerChunkX, int centerChunkZ, int radius)
+    {
+        this.requestCameraChunks(centerChunkX, centerChunkZ, radius, 80);
+    }
+
+    private void requestCameraChunks(int centerChunkX, int centerChunkZ, int radius, int maxNewRequests)
+    {
+        List<ChunkPos> positions = new ArrayList<>();
+
+        for (int dx = -radius; dx <= radius; dx++)
         {
-            this.cameraContext.apply(clip, position);
+            for (int dz = -radius; dz <= radius; dz++)
+            {
+                positions.add(new ChunkPos(centerChunkX + dx, centerChunkZ + dz));
+            }
+        }
+
+        /* Radial sort from center outward */
+        positions.sort(Comparator.comparingInt((p) ->
+        {
+            int ddx = p.x - centerChunkX;
+            int ddz = p.z - centerChunkZ;
+
+            return ddx * ddx + ddz * ddz;
+        }));
+
+        int newRequests = 0;
+
+        for (ChunkPos pos : positions)
+        {
+            if (!this.activeCameraTickets.contains(pos))
+            {
+                this.world.getChunkManager().addTicket(BBSMod.BBS_CAMERA_TICKET, pos, 31, pos);
+                this.activeCameraTickets.add(pos);
+            }
+
+            if (this.sentCameraChunks.contains(pos) || this.requestedChunks.contains(pos))
+            {
+                continue;
+            }
+
+            if (newRequests >= maxNewRequests)
+            {
+                break;
+            }
+
+            this.requestedChunks.add(pos);
+            newRequests++;
+
+            Chunk chunk = this.world.getChunkManager().getChunk(pos.x, pos.z, ChunkStatus.FULL, false);
+
+            if (chunk instanceof WorldChunk worldChunk)
+            {
+                this.pendingChunksToSend.add(worldChunk);
+                this.sentCameraChunks.add(pos);
+            }
+            else
+            {
+                this.world.getChunkManager().getChunkFutureSyncOnMainThread(pos.x, pos.z, ChunkStatus.FULL, true).thenAccept((opt) ->
+                {
+                    Chunk loaded = opt.orElse(null);
+
+                    if (loaded instanceof WorldChunk loadedWorldChunk)
+                    {
+                        if (this.world.getServer() != null)
+                        {
+                            this.world.getServer().execute(() ->
+                            {
+                                if (this.playing && this.serverPlayer != null)
+                                {
+                                    if (this.sentCameraChunks.add(pos))
+                                    {
+                                        this.sendChunkBatch(List.of(loadedWorldChunk));
+                                    }
+                                }
+                            });
+                        }
+                    }
+                });
+            }
         }
     }
 
-    private void prewarmCameraChunks(int currentTick, int horizonTicks)
+    private void sendChunkBatch(List<WorldChunk> chunks)
     {
-        if (this.world == null || this.film.camera == null || this.film.camera.get().isEmpty())
+        if (chunks == null || chunks.isEmpty() || this.serverPlayer == null)
         {
             return;
         }
 
-        Position samplePos = new Position();
-        this.evaluateCameraPosition(currentTick, samplePos);
+        this.serverPlayer.networkHandler.sendPacket(StartChunkSendS2CPacket.INSTANCE);
 
-        int centerChunkX = ((int) Math.floor(samplePos.point.x)) >> 4;
-        int centerChunkZ = ((int) Math.floor(samplePos.point.z)) >> 4;
+        for (WorldChunk worldChunk : chunks)
+        {
+            ChunkPos pos = worldChunk.getPos();
 
-        if (this.serverPlayer != null && (centerChunkX != this.lastCenterChunkX || centerChunkZ != this.lastCenterChunkZ))
+            this.serverPlayer.networkHandler.sendPacket(new ChunkDataS2CPacket(worldChunk, this.world.getLightingProvider(), null, null));
+            this.serverPlayer.networkHandler.sendPacket(new LightUpdateS2CPacket(pos, this.world.getLightingProvider(), null, null));
+        }
+
+        this.serverPlayer.networkHandler.sendPacket(new ChunkSentS2CPacket(chunks.size()));
+    }
+
+    private void flushPendingChunks()
+    {
+        if (!this.pendingChunksToSend.isEmpty())
+        {
+            List<WorldChunk> toSend = new ArrayList<>(this.pendingChunksToSend);
+            this.pendingChunksToSend.clear();
+            this.sendChunkBatch(toSend);
+        }
+    }
+
+    private void preloadPath(int currentTick, int viewDistance)
+    {
+        int lookaheadEnd = Math.min(this.duration, currentTick + 80);
+        Position futureSamplePos = new Position();
+
+        for (int t = currentTick + 10; t <= lookaheadEnd; t += 20)
+        {
+            this.evaluateCameraPosition(t, futureSamplePos);
+            int futureChunkX = ((int) Math.floor(futureSamplePos.point.x)) >> 4;
+            int futureChunkZ = ((int) Math.floor(futureSamplePos.point.z)) >> 4;
+
+            this.requestCameraChunks(futureChunkX, futureChunkZ, 2);
+        }
+    }
+
+    private void cleanupDistantChunks(int centerChunkX, int centerChunkZ, int viewDistance)
+    {
+        this.activeCameraTickets.removeIf((p) ->
+        {
+            if (this.activePlayerTickets.contains(p))
+            {
+                return false;
+            }
+
+            if (Math.abs(p.x - centerChunkX) > viewDistance + 4 || Math.abs(p.z - centerChunkZ) > viewDistance + 4)
+            {
+                this.world.getChunkManager().removeTicket(BBSMod.BBS_CAMERA_TICKET, p, 31, p);
+                this.sentCameraChunks.remove(p);
+                this.requestedChunks.remove(p);
+
+                return true;
+            }
+
+            return false;
+        });
+    }
+
+    private void evaluateCameraPosition(int t, Position out)
+    {
+        out.point.set(0, 0, 0);
+        out.angle.set(0, 0);
+
+        if (this.cameraContext != null && this.film.camera != null)
+        {
+            this.cameraContext.clipData.clear();
+            this.cameraContext.setup(t, 0F);
+
+            for (Clip clip : this.cameraContext.clips.getClips(t))
+            {
+                this.cameraContext.apply(clip, out);
+            }
+        }
+    }
+
+    private void syncCameraChunks(int currentTick)
+    {
+        if (this.film.camera == null || this.serverPlayer == null)
+        {
+            return;
+        }
+
+        this.evaluateCameraPosition(currentTick, this.cameraPosition);
+        Vec3d camVec = new Vec3d(this.cameraPosition.point.x, this.cameraPosition.point.y, this.cameraPosition.point.z);
+
+        if (this.serverPlayer instanceof IBBSCameraPlayer cameraPlayer)
+        {
+            cameraPlayer.bbs$setCameraPosition(camVec);
+        }
+
+        int centerChunkX = ((int) Math.floor(this.cameraPosition.point.x)) >> 4;
+        int centerChunkZ = ((int) Math.floor(this.cameraPosition.point.z)) >> 4;
+        boolean chunkChanged = centerChunkX != this.lastCenterChunkX || centerChunkZ != this.lastCenterChunkZ;
+        int viewDistance = this.getEffectiveViewDistance();
+
+        if (chunkChanged)
         {
             this.lastCenterChunkX = centerChunkX;
             this.lastCenterChunkZ = centerChunkZ;
+
             this.serverPlayer.networkHandler.sendPacket(new ChunkRenderDistanceCenterS2CPacket(centerChunkX, centerChunkZ));
+            this.requestCameraChunks(centerChunkX, centerChunkZ, viewDistance);
         }
-
-        int viewDistance = this.serverPlayer != null && this.serverPlayer.getServer() != null
-            ? this.serverPlayer.getServer().getPlayerManager().getViewDistance()
-            : 8;
-
-        Set<ChunkPos> newTickets = new HashSet<>();
-
-        for (int dx = -viewDistance; dx <= viewDistance; dx++)
+        else if (currentTick % 10 == 0)
         {
-            for (int dz = -viewDistance; dz <= viewDistance; dz++)
-            {
-                ChunkPos pos = new ChunkPos(centerChunkX + dx, centerChunkZ + dz);
-                newTickets.add(pos);
-            }
+            this.requestCameraChunks(centerChunkX, centerChunkZ, viewDistance);
         }
 
-        for (ChunkPos pos : newTickets)
+        /* Lookahead: preload chunks ahead along camera path */
+        if (currentTick % 10 == 0)
         {
-            if (!this.activeCameraTickets.contains(pos))
-            {
-                this.world.getChunkManager().addTicket(BBSMod.BBS_CAMERA_TICKET, pos, 3, pos);
-
-                if (this.serverPlayer != null)
-                {
-                    WorldChunk chunk = this.world.getChunk(pos.x, pos.z);
-
-                    if (chunk != null)
-                    {
-                        this.serverPlayer.networkHandler.sendPacket(new ChunkDataS2CPacket(chunk, this.world.getLightingProvider(), null, null));
-                        this.serverPlayer.networkHandler.sendPacket(new LightUpdateS2CPacket(pos, this.world.getLightingProvider(), null, null));
-                    }
-                }
-            }
+            this.preloadPath(currentTick, viewDistance);
         }
 
-        for (ChunkPos pos : this.activeCameraTickets)
+        /* Send ready chunk batches */
+        this.flushPendingChunks();
+
+        /* Clean up out-of-range camera tickets periodically */
+        if (currentTick % 20 == 0)
         {
-            if (!newTickets.contains(pos))
-            {
-                this.world.getChunkManager().removeTicket(BBSMod.BBS_CAMERA_TICKET, pos, 3, pos);
-            }
+            this.cleanupDistantChunks(centerChunkX, centerChunkZ, viewDistance);
         }
-
-        this.activeCameraTickets = newTickets;
     }
 
     /** Equipment slots the film drives directly; the hotbar is driven by slot index instead. */
@@ -454,7 +647,7 @@ public class ActionPlayer
 
         if (this.withCamera)
         {
-            this.prewarmCameraChunks(this.tick, 60);
+            this.syncCameraChunks(this.tick);
         }
 
         this.tick += 1;
@@ -546,6 +739,11 @@ public class ActionPlayer
                 this.applyAction();
             }
         }
+
+        if (this.withCamera)
+        {
+            this.syncCameraChunks(this.tick);
+        }
     }
 
     public void stop()
@@ -589,15 +787,32 @@ public class ActionPlayer
 
         if (this.serverPlayer != null)
         {
-            this.serverPlayer.networkHandler.sendPacket(new ChunkRenderDistanceCenterS2CPacket(this.serverPlayer.getChunkPos().x, this.serverPlayer.getChunkPos().z));
+            if (this.serverPlayer instanceof IBBSCameraPlayer cameraPlayer)
+            {
+                cameraPlayer.bbs$clearCameraPosition();
+            }
+
+            ChunkPos playerChunk = this.serverPlayer.getChunkPos();
+
+            this.serverPlayer.networkHandler.sendPacket(new ChunkRenderDistanceCenterS2CPacket(playerChunk.x, playerChunk.z));
+            this.serverPlayer.getServerWorld().getChunkManager().updatePosition(this.serverPlayer);
+        }
+
+        for (ChunkPos pos : this.activePlayerTickets)
+        {
+            this.world.getChunkManager().removeTicket(BBSMod.BBS_CAMERA_TICKET, pos, 31, pos);
         }
 
         for (ChunkPos pos : this.activeCameraTickets)
         {
-            this.world.getChunkManager().removeTicket(BBSMod.BBS_CAMERA_TICKET, pos, 3, pos);
+            this.world.getChunkManager().removeTicket(BBSMod.BBS_CAMERA_TICKET, pos, 31, pos);
         }
 
+        this.activePlayerTickets.clear();
         this.activeCameraTickets.clear();
+        this.requestedChunks.clear();
+        this.sentCameraChunks.clear();
+        this.pendingChunksToSend.clear();
         this.lastCenterChunkX = Integer.MIN_VALUE;
         this.lastCenterChunkZ = Integer.MIN_VALUE;
     }
@@ -605,5 +820,10 @@ public class ActionPlayer
     public void toggle()
     {
         this.playing = !this.playing;
+    }
+
+    public ServerPlayerEntity getServerPlayer()
+    {
+        return this.serverPlayer;
     }
 }

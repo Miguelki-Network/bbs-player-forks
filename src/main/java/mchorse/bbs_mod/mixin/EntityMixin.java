@@ -1,8 +1,11 @@
 package mchorse.bbs_mod.mixin;
 
+import mchorse.bbs_mod.entity.IEntityFormProvider;
 import mchorse.bbs_mod.morphing.IMorphProvider;
+
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.PlayerEntity;
+
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -14,7 +17,7 @@ public class EntityMixin
     @Inject(method = "shouldRender(D)Z", at = @At("HEAD"), cancellable = true)
     public void bbs$onShouldRender(double distance, CallbackInfoReturnable<Boolean> info)
     {
-        if ((Object) this instanceof PlayerEntity || (Object) this instanceof IMorphProvider)
+        if ((Object) this instanceof PlayerEntity || (Object) this instanceof IMorphProvider || (Object) this instanceof IEntityFormProvider)
         {
             info.setReturnValue(distance < (512D * 512D));
         }

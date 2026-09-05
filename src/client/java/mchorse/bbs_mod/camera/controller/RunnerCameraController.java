@@ -7,6 +7,10 @@ import mchorse.bbs_mod.ui.film.UIFilmPanel;
 import mchorse.bbs_mod.ui.film.controller.UIFilmController;
 import mchorse.bbs_mod.utils.clips.Clip;
 
+import mchorse.bbs_mod.BBSModClient;
+import mchorse.bbs_mod.network.ClientNetwork;
+import org.joml.Vector3d;
+
 import java.util.function.Consumer;
 
 public class RunnerCameraController extends CameraWorkCameraController
@@ -17,6 +21,10 @@ public class RunnerCameraController extends CameraWorkCameraController
     private UIFilmPanel panel;
 
     private Consumer<Boolean> callback;
+    private int syncTimer;
+    private double lastSyncX = Double.MAX_VALUE;
+    private double lastSyncY = Double.MAX_VALUE;
+    private double lastSyncZ = Double.MAX_VALUE;
 
     public RunnerCameraController(UIFilmPanel panel, Consumer<Boolean> callback)
     {
@@ -75,6 +83,34 @@ public class RunnerCameraController extends CameraWorkCameraController
             if (this.ticks >= this.context.clips.calculateDuration())
             {
                 this.setPlaying(false);
+            }
+        }
+
+        if (ClientNetwork.isIsBBSModOnServer())
+        {
+            this.syncTimer += 1;
+
+            if (this.syncTimer >= 10)
+            {
+                this.syncTimer = 0;
+
+                Vector3d pos = BBSModClient.getCameraController().getPosition();
+
+                if (pos != null)
+                {
+                    double dx = pos.x - this.lastSyncX;
+                    double dy = pos.y - this.lastSyncY;
+                    double dz = pos.z - this.lastSyncZ;
+
+                    if (dx * dx + dy * dy + dz * dz > 1D)
+                    {
+                        this.lastSyncX = pos.x;
+                        this.lastSyncY = pos.y;
+                        this.lastSyncZ = pos.z;
+
+                        ClientNetwork.sendEditorCameraSync(pos.x, pos.y, pos.z);
+                    }
+                }
             }
         }
     }
